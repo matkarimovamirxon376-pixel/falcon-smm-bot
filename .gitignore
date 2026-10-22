@@ -1,0 +1,19 @@
+# Muhit o'zgaruvchilari (TOKEN va API kalit shu yerda — hech qachon commit qilinmasin!)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Ma'lumotlar bazasi / loglar
+*.db
+*.sqlite3
+*.log
+
+# IDE
+.vscode/
+.idea/
