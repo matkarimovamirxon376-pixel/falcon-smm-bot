@@ -96,29 +96,71 @@ class FalconAPI:
             await self._session.close()
 
     async def _request(self, payload: dict[str, Any]) -> Any:
-        """API ga POST so'rov yuboradi va JSON javobni qaytaradi."""
-        data = {"key": self._api_key, **payload}
+        """API ga POST so'rov yuboradi va JSON javobni qaytaradi.
+
+        Diqqat: SMM panellar ko'pincha xato bo'lganda ham HTTP 200 qaytaradi
+        va xatoni javob tanasidagi `error` maydoniga joylaydi. Shuning uchun
+        biz faqat status kodiga emas, balki javob tanasiga ham tayanamiz.
+        """
+        # Barcha qiymatlarni string'ga aylantiramiz (aiohttp form-data faqat
+        # str/bytes qabul qiladi; int yuborilsa "quantity must be str" xatosi chiqadi).
+        data = {"key": self._api_key}
+        for key, value in payload.items():
+            data[key] = str(value)
+
         session = await self._get_session()
         try:
             async with session.post(self._api_url, data=data) as resp:
                 text = await resp.text()
-                if resp.status != 200:
-                    raise FalconAPIError(
-                        f"API HTTP {resp.status} xatosi qaytardi."
-                    )
+                status = resp.status
                 try:
                     result = await resp.json(content_type=None)
-                except Exception as exc:  # noqa: BLE001
+                except Exception:  # noqa: BLE001
+                    # JSON emas — ehtimol HTML xato sahifasi yoki bo'sh javob
+                    snippet = (text or "").strip()[:200]
+                    if status != 200:
+                        raise FalconAPIError(
+                            f"API HTTP {status} xatosi qaytardi"
+                            + (f": {snippet}" if snippet else ".")
+                        )
+                    if not snippet:
+                        raise FalconAPIError(
+                            "API bo'sh javob qaytardi. API manzili yoki kalitni "
+                            "tekshiring."
+                        )
                     raise FalconAPIError(
-                        f"API javobini JSON sifatida o'qib bo'lmadi: {text[:200]}"
-                    ) from exc
+                        f"API javobini JSON sifatida o'qib bo'lmadi: {snippet}"
+                    )
         except aiohttp.ClientError as exc:
             raise FalconAPIError(f"Tarmoq xatosi: {exc}") from exc
 
-        # API xatolarni {"error": "..."} ko'rinishida qaytaradi
-        if isinstance(result, dict) and result.get("error"):
-            raise FalconAPIError(str(result["error"]))
+        # SMM panellar xatoni {"error": "..."} ko'rinishida qaytaradi
+        # (odatda HTTP 200 bilan birga).
+        if isinstance(result, dict):
+            err = result.get("error")
+            if err:
+                raise FalconAPIError(self._humanize_error(str(err)))
+
+        # HTTP status xato, lekin JSON'da error maydoni yo'q bo'lsa
+        if status != 200:
+            raise FalconAPIError(f"API HTTP {status} xatosi qaytardi.")
+
         return result
+
+    @staticmethod
+    def _humanize_error(err: str) -> str:
+        """API ning inglizcha xatolarini foydalanuvchiga tushunarli qiladi."""
+        low = err.lower()
+        if "key" in low and ("incorrect" in low or "invalid" in low or "wrong" in low):
+            return (
+                "API kaliti noto'g'ri. .env faylidagi FALCON_API_KEY ni tekshiring "
+                f"(API javobi: {err})."
+            )
+        if "action" in low:
+            return f"API noto'g'ri so'rov deb hisobladi (action): {err}"
+        if "balance" in low or "funds" in low:
+            return f"Hisobda mablag' yetarli emas: {err}"
+        return err
 
     # ------------------------------------------------------------------ #
     # Umumiy API metodlari
@@ -127,7 +169,10 @@ class FalconAPI:
         """Barcha xizmatlar ro'yxatini qaytaradi."""
         result = await self._request({"action": "services"})
         if not isinstance(result, list):
-            raise FalconAPIError("Xizmatlar ro'yxati kutilgan formatda emas.")
+            raise FalconAPIError(
+                "API xizmatlar ro'yxatini qaytarmadi. API kaliti yoki manzili "
+                "noto'g'ri bo'lishi mumkin."
+            )
         return [Service.from_dict(item) for item in result if isinstance(item, dict)]
 
     async def balance(self) -> dict[str, Any]:
@@ -135,6 +180,12 @@ class FalconAPI:
         result = await self._request({"action": "balance"})
         if not isinstance(result, dict):
             raise FalconAPIError("Balans javobi kutilgan formatda emas.")
+        # Ba'zi panellar error maydonisiz, lekin balance ham bermasligi mumkin
+        if "balance" not in result:
+            raise FalconAPIError(
+                "API balansni qaytarmadi. API kaliti yoki manzili noto'g'ri "
+                "bo'lishi mumkin."
+            )
         return result
 
     async def add_order(
