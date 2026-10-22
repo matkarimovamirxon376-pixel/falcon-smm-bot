@@ -71,8 +71,17 @@ async def main() -> None:
         )
         await bot.session.close()
         raise SystemExit(1)
+    except Exception as exc:  # noqa: BLE001
+        # Masalan: internetga ulanib bo'lmadi, proksi, DNS va h.k.
+        logger.error(
+            "❌ Telegram serveriga ulanib bo'lmadi: %s: %s\n"
+            "   Internet aloqangizni yoki proksi/VPN sozlamalaringizni tekshiring.",
+            type(exc).__name__, exc,
+        )
+        await bot.session.close()
+        raise SystemExit(1) from exc
 
-    logger.info("🦅 FALCON SMM bot ishga tushdi...")
+    logger.info("🦅 FALCON SMM bot ishga tushdi... (to'xtatish: Ctrl+C)")
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)
@@ -85,5 +94,10 @@ async def main() -> None:
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot foydalanuvchi tomonidan to'xtatildi.")
+    except KeyboardInterrupt:
+        # Faqat Ctrl+C bosilganда — bu haqiqatan foydalanuvchi to'xtatishi
+        logger.info("Bot foydalanuvchi tomonidan to'xtatildi (Ctrl+C).")
+    except SystemExit:
+        # Sozlama/token/ulanish xatosi tufayli to'xtatildi — xato yuqorida
+        # allaqachon ko'rsatilgan, qayta yozmaymiz.
+        raise
