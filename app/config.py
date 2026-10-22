@@ -19,6 +19,7 @@ class Config:
     api_key: str
     api_url: str
     admins: list[int] = field(default_factory=list)
+    proxy: str | None = None  # Telegram API uchun proksi (ixtiyoriy)
 
 
 def _parse_admins(raw: str | None) -> list[int]:
@@ -55,8 +56,9 @@ def load_config() -> Config:
     bot_token = _clean(os.getenv("BOT_TOKEN"))
     api_key = _clean(os.getenv("FALCON_API_KEY"))
     api_url = _clean(os.getenv("FALCON_API_URL")) or (
-        "https://smmsapi.safobuilder.uz/FalconSeenv2bot/api/v2"
+        "https://smmsb.uz/FalconSeenv2bot/api/v2"
     )
+    proxy = _clean(os.getenv("PROXY")) or None
 
     if not bot_token:
         raise RuntimeError(
@@ -88,4 +90,5 @@ def load_config() -> Config:
         api_key=api_key,
         api_url=api_url,
         admins=_parse_admins(os.getenv("ADMINS")),
+        proxy=proxy,
     )

@@ -12,6 +12,7 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramUnauthorizedError
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -36,8 +37,16 @@ async def main() -> None:
         logger.error("❌ Sozlama xatosi: %s", exc)
         raise SystemExit(1) from exc
 
+    # Agar .env da PROXY berilgan bo'lsa, Telegram API'ga proksi orqali ulanamiz
+    # (ko'p davlatlarda Telegram to'g'ridan-to'g'ri ochilmaydi).
+    session = None
+    if config.proxy:
+        logger.info("🔌 Proksi ishlatilmoqda: %s", config.proxy)
+        session = AiohttpSession(proxy=config.proxy)
+
     bot = Bot(
         token=config.bot_token,
+        session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher(storage=MemoryStorage())
